@@ -16,6 +16,8 @@ from .server import serve
 
 CONFIG_NAME = "context-rag.yaml"
 CONFIG_TEMPLATE = """# context-rag configuration
+# Customize tool_descriptions to control how MCP clients describe this corpus.
+# Available MCP tools: search, get_chunk, list_sources.
 corpus_root: .
 database_path: .context-rag/index.db
 chunk:
@@ -27,6 +29,10 @@ embedding:
 retrieval:
   default_mode: hybrid
   rrf_k: 60
+tool_descriptions:
+  search: "Search the indexed markdown corpus. Returns relevant excerpts with citations."
+  get_chunk: "Fetch the full content of a chunk by id."
+  list_sources: "List all source files in the index."
 """
 
 
@@ -149,6 +155,14 @@ def _defaults() -> dict[str, Any]:
         "chunk": {"max_chars": 4000, "overlap": 0},
         "embedding": {"model": "BAAI/bge-m3", "batch_size": 16},
         "retrieval": {"default_mode": "hybrid", "rrf_k": 60},
+        "tool_descriptions": {
+            "search": (
+                "Search the indexed markdown corpus. Returns relevant excerpts "
+                "with citations."
+            ),
+            "get_chunk": "Fetch the full content of a chunk by id.",
+            "list_sources": "List all source files in the index.",
+        },
     }
 
 

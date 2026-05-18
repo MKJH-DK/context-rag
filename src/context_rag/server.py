@@ -13,6 +13,14 @@ from .query import format_citation, hybrid_search
 
 
 DEFAULT_DB = Path(".context-rag/index.db")
+DEFAULT_TOOL_DESCRIPTIONS = {
+    "search": (
+        "Search the indexed markdown corpus. Returns relevant excerpts "
+        "with citations."
+    ),
+    "get_chunk": "Fetch the full content of a chunk by id.",
+    "list_sources": "List all source files in the index.",
+}
 
 
 def search_index(db_path: str | Path, query: str, k: int = 10) -> list[dict[str, Any]]:
@@ -70,21 +78,22 @@ def serve(db_path: str | Path = DEFAULT_DB) -> None:
     db = Path(db_path)
     get_chunk_fn = get_chunk
     list_sources_fn = list_sources
+    descriptions = resolve_tool_descriptions()
     mcp = FastMCP("context-rag")
 
-    @mcp.tool()
+    @mcp.tool(description=descriptions["search"])
     def search(query: str, k: int = 10) -> list[dict[str, Any]]:
         """Search an indexed markdown corpus and return chunks with citations."""
 
         return search_index(db, query, k=k)
 
-    @mcp.tool()
+    @mcp.tool(description=descriptions["get_chunk"])
     def get_chunk(chunk_id: str) -> dict[str, Any] | None:
         """Return the full content and citation for one markdown corpus chunk."""
 
         return get_chunk_fn(db, chunk_id)
 
-    @mcp.tool()
+    @mcp.tool(description=descriptions["list_sources"])
     def list_sources() -> list[dict[str, Any]]:
         """List source markdown files currently indexed in the corpus."""
 
@@ -105,6 +114,21 @@ def _connect(db_path: str | Path) -> sqlite3.Connection:
     con = sqlite3.connect(str(db_path))
     con.row_factory = sqlite3.Row
     return con
+
+
+def resolve_tool_descriptions(config_path: Path | None = None) -> dict[str, str]:
+    """Return MCP tool descriptions from config with built-in fallbacks."""
+
+    from .cli import load_config
+
+    configured = load_config(config_path).get("tool_descriptions", {})
+    descriptions = dict(DEFAULT_TOOL_DESCRIPTIONS)
+    if isinstance(configured, dict):
+        for name in descriptions:
+            value = configured.get(name)
+            if value:
+                descriptions[name] = str(value)
+    return descriptions
 
 
 def _row_result(row: sqlite3.Row) -> dict[str, Any]:
