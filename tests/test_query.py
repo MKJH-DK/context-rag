@@ -1,4 +1,4 @@
-from context_rag.query import rrf_fuse
+from context_rag.query import _fts_query, rrf_fuse
 
 
 def test_rrf_fusion_combines_ranks_deterministically() -> None:
@@ -18,3 +18,7 @@ def test_rrf_fusion_combines_ranks_deterministically() -> None:
     assert fused[0]["rank_dense"] == 1
     assert fused[1]["rank_bm25"] == 1
     assert fused[1]["rank_dense"] is None
+
+
+def test_fts_query_drops_common_danish_stopwords() -> None:
+    assert _fts_query("hvad er RAG") == '"RAG"'

@@ -11,6 +11,23 @@ from typing import Any
 from .indexer import cosine_similarity, unpack_vector
 
 
+STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "er",
+    "hvad",
+    "i",
+    "is",
+    "of",
+    "og",
+    "the",
+    "to",
+    "what",
+}
+
+
 def bm25_search(db: str | Path, query: str, k: int = 20) -> list[dict[str, Any]]:
     fts_query = _fts_query(query)
     if not fts_query or k <= 0:
@@ -126,7 +143,11 @@ def _connect(db: str | Path) -> sqlite3.Connection:
 
 
 def _fts_query(query: str) -> str:
-    terms = re.findall(r"[\w]+", query, flags=re.UNICODE)
+    terms = [
+        term
+        for term in re.findall(r"[\w]+", query, flags=re.UNICODE)
+        if term.lower() not in STOPWORDS
+    ]
     return " OR ".join(f'"{term}"' for term in terms)
 
 
