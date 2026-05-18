@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 from pathlib import Path
 import sys
 from typing import Any
@@ -55,6 +57,15 @@ def main(argv: list[str] | None = None) -> int:
     serve_parser = sub.add_parser("serve", help="start the stdio MCP server")
     serve_parser.add_argument("--db", type=Path, default=None)
 
+    install_parser = sub.add_parser(
+        "install-claude-desktop",
+        help="write a Claude Desktop MCP server entry",
+    )
+    install_parser.add_argument("--name", default="context-rag")
+    install_parser.add_argument("--cwd", type=Path, default=Path("."))
+    install_parser.add_argument("--dry-run", action="store_true")
+    install_parser.add_argument("--force", action="store_true")
+
     args = parser.parse_args(argv)
     if args.command == "init":
         return cmd_init()
@@ -66,6 +77,13 @@ def main(argv: list[str] | None = None) -> int:
         config = load_config()
         serve(args.db or Path(config["database_path"]))
         return 0
+    if args.command == "install-claude-desktop":
+        return cmd_install_claude_desktop(
+            name=args.name,
+            cwd=args.cwd,
+            dry_run=args.dry_run,
+            force=args.force,
+        )
     raise AssertionError(args.command)
 
 
@@ -139,6 +157,60 @@ def cmd_query(query: str, *, k: int, mode: str | None) -> int:
     return 0
 
 
+def cmd_install_claude_desktop(
+    *, name: str, cwd: Path, dry_run: bool = False, force: bool = False
+) -> int:
+    config_path = resolve_claude_desktop_config_path()
+    config = _load_claude_desktop_config(config_path)
+    servers = config.get("mcpServers")
+    if not isinstance(servers, dict):
+        servers = {}
+        config["mcpServers"] = servers
+
+    if name in servers and not force:
+        print(
+            f'MCP entry "{name}" already exists in {config_path}. '
+            "Re-run with --force to overwrite.",
+            file=sys.stderr,
+        )
+        return 1
+
+    servers[name] = _claude_desktop_entry(cwd)
+    rendered = json.dumps(config, indent=2) + "\n"
+
+    if dry_run:
+        print(rendered, end="")
+        return 0
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(rendered, encoding="utf-8")
+    print(f'Wrote MCP entry "{name}" to {config_path}. Restart Claude Desktop to load.')
+    return 0
+
+
+def resolve_claude_desktop_config_path() -> Path:
+    if sys.platform.startswith("win"):
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            return Path(appdata) / "Claude" / "claude_desktop_config.json"
+        return (
+            Path.home()
+            / "AppData"
+            / "Roaming"
+            / "Claude"
+            / "claude_desktop_config.json"
+        )
+    if sys.platform == "darwin":
+        return (
+            Path.home()
+            / "Library"
+            / "Application Support"
+            / "Claude"
+            / "claude_desktop_config.json"
+        )
+    return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
+
+
 def load_config(path: Path | None = None) -> dict[str, Any]:
     config_path = path or Path(CONFIG_NAME)
     if not config_path.exists():
@@ -146,6 +218,28 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
     data = _parse_simple_yaml(config_path)
     defaults = _defaults()
     return _merge(defaults, data)
+
+
+def _load_claude_desktop_config(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {"mcpServers": {}}
+    text = path.read_text(encoding="utf-8")
+    if not text.strip():
+        return {"mcpServers": {}}
+    config = json.loads(text)
+    if not isinstance(config, dict):
+        return {"mcpServers": {}}
+    config.setdefault("mcpServers", {})
+    return config
+
+
+def _claude_desktop_entry(cwd: Path) -> dict[str, Any]:
+    return {
+        "command": sys.executable,
+        "args": ["-m", "context_rag.cli", "serve"],
+        "cwd": str(cwd.expanduser().resolve()),
+        "env": {"PYTHONPATH": str(Path(__file__).resolve().parents[1])},
+    }
 
 
 def _defaults() -> dict[str, Any]:
