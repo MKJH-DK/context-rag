@@ -9,6 +9,7 @@ import re
 
 
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+LOC_RE = re.compile(r"^<!--\s*loc:\s*(.+?)\s*-->\s*$")
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,13 @@ class Chunk:
     text: str
     start_line: int
     end_line: int
+    src: str | None = None
+    ts: str | None = None
+    ts_end: str | None = None
+    page: int | None = None
+    chapter: str | None = None
+    slide: int | None = None
+    sheet: str | None = None
 
     def as_dict(self) -> dict[str, object]:
         data = asdict(self)
@@ -113,64 +121,75 @@ def _split_section(
     max_chars: int,
     overlap: int,
 ) -> list[Chunk]:
-    if len("\n".join(text_lines)) <= max_chars:
-        return [
-            _chunk(
-                source=source,
-                heading_path=heading_path,
-                text="\n".join(text_lines).strip(),
-                start_line=start_line,
-                end_line=start_line + len(text_lines) - 1,
-            )
-        ]
-
     chunks: list[Chunk] = []
-    buffer: list[str] = []
+    buffer: list[tuple[str, int, dict[str, str]]] = []
     buffer_start = start_line
+    current_loc: dict[str, str] = {}
+
     for offset, line in enumerate(text_lines):
-        next_text = "\n".join([*buffer, line]).strip()
+        line_no = start_line + offset
+        marker = LOC_RE.match(line)
+        if marker:
+            current_loc = _parse_loc_marker(marker.group(1))
+            continue
+
+        next_text = "\n".join([entry[0] for entry in [*buffer, (line, line_no, current_loc)]]).strip()
         if buffer and len(next_text) > max_chars and not line.startswith("#"):
             chunks.append(
                 _chunk(
                     source=source,
                     heading_path=heading_path,
-                    text="\n".join(buffer).strip(),
+                    text="\n".join(entry[0] for entry in buffer).strip(),
                     start_line=buffer_start,
-                    end_line=start_line + offset - 1,
+                    end_line=buffer[-1][1],
+                    loc=_first_loc(buffer),
                 )
             )
             buffer, buffer_start = _overlap_lines(buffer, overlap, start_line + offset)
-        buffer.append(line)
+        if not buffer:
+            buffer_start = line_no
+        buffer.append((line, line_no, current_loc.copy()))
 
-    if "\n".join(buffer).strip():
+    if "\n".join(entry[0] for entry in buffer).strip():
         chunks.append(
             _chunk(
                 source=source,
                 heading_path=heading_path,
-                text="\n".join(buffer).strip(),
+                text="\n".join(entry[0] for entry in buffer).strip(),
                 start_line=buffer_start,
-                end_line=start_line + len(text_lines) - 1,
+                end_line=buffer[-1][1],
+                loc=_first_loc(buffer),
             )
         )
     return chunks
 
 
-def _overlap_lines(lines: list[str], overlap: int, next_line_no: int) -> tuple[list[str], int]:
+def _overlap_lines(
+    lines: list[tuple[str, int, dict[str, str]]], overlap: int, next_line_no: int
+) -> tuple[list[tuple[str, int, dict[str, str]]], int]:
     if overlap == 0:
         return [], next_line_no
 
-    selected: list[str] = []
+    selected: list[tuple[str, int, dict[str, str]]] = []
     size = 0
-    for line in reversed(lines):
-        selected.insert(0, line)
-        size += len(line) + 1
+    for entry in reversed(lines):
+        selected.insert(0, entry)
+        size += len(entry[0]) + 1
         if size >= overlap:
             break
-    return selected, next_line_no - len(selected)
+    return selected, selected[0][1] if selected else next_line_no
 
 
 def _heading_path(headings: dict[int, str]) -> tuple[str, ...]:
     return tuple(headings[level] for level in sorted(headings) if level <= 3)
+
+
+def _first_loc(lines: list[tuple[str, int, dict[str, str]]]) -> dict[str, str]:
+    """Use the first marker that applies to this chunk's content."""
+    for _, _, loc in lines:
+        if loc:
+            return loc
+    return {}
 
 
 def _chunk(
@@ -180,9 +199,11 @@ def _chunk(
     text: str,
     start_line: int,
     end_line: int,
+    loc: dict[str, str] | None = None,
 ) -> Chunk:
     seed = f"{source.as_posix()}:{start_line}:{end_line}:{text}"
     digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:24]
+    loc = loc or {}
     return Chunk(
         id=f"chunk:{digest}",
         source=str(source),
@@ -190,4 +211,33 @@ def _chunk(
         text=text,
         start_line=start_line,
         end_line=end_line,
+        src=loc.get("src"),
+        ts=loc.get("ts"),
+        ts_end=loc.get("ts_end"),
+        page=_to_int(loc.get("p")),
+        chapter=loc.get("ch"),
+        slide=_to_int(loc.get("slide")),
+        sheet=loc.get("sheet"),
     )
+
+
+def _parse_loc_marker(body: str) -> dict[str, str]:
+    loc: dict[str, str] = {}
+    for part in body.split(";"):
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if key in {"src", "ts", "ts_end", "p", "ch", "slide", "sheet"} and value:
+            loc[key] = value
+    return loc
+
+
+def _to_int(value: str | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
