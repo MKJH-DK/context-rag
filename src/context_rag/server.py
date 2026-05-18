@@ -81,20 +81,20 @@ def serve(db_path: str | Path = DEFAULT_DB) -> None:
     descriptions = resolve_tool_descriptions()
     mcp = FastMCP("context-rag")
 
-    @mcp.tool(description=descriptions["search"])
-    def search(query: str, k: int = 10) -> list[dict[str, Any]]:
+    @mcp.tool(name="search", description=descriptions["search"])
+    def _search_tool(query: str, k: int = 10) -> list[dict[str, Any]]:
         """Search an indexed markdown corpus and return chunks with citations."""
 
         return search_index(db, query, k=k)
 
-    @mcp.tool(description=descriptions["get_chunk"])
-    def get_chunk(chunk_id: str) -> dict[str, Any] | None:
+    @mcp.tool(name="get_chunk", description=descriptions["get_chunk"])
+    def _get_chunk_tool(chunk_id: str) -> dict[str, Any] | None:
         """Return the full content and citation for one markdown corpus chunk."""
 
         return get_chunk_fn(db, chunk_id)
 
-    @mcp.tool(description=descriptions["list_sources"])
-    def list_sources() -> list[dict[str, Any]]:
+    @mcp.tool(name="list_sources", description=descriptions["list_sources"])
+    def _list_sources_tool() -> list[dict[str, Any]]:
         """List source markdown files currently indexed in the corpus."""
 
         return list_sources_fn(db)
