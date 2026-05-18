@@ -1,0 +1,22 @@
+from pathlib import Path
+
+from context_rag.chunker import Chunk
+from context_rag.indexer import Indexer
+from context_rag.server import get_chunk, list_sources
+
+
+def test_server_helpers_return_citations(tmp_path: Path) -> None:
+    db_path = tmp_path / "index.db"
+    chunk = Chunk(
+        id="chunk:one",
+        source="notes.md",
+        heading_path=("Root",),
+        text="tool visible citations",
+        start_line=4,
+        end_line=6,
+    )
+    indexer = Indexer(db_path)
+    indexer.add_chunks([chunk], [[1.0, 0.0, 0.0]])
+
+    assert list_sources(db_path)[0]["source"] == "notes.md"
+    assert get_chunk(db_path, "chunk:one")["citation"] == "notes.md:4-6"
