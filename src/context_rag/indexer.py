@@ -13,7 +13,7 @@ from typing import Any, Iterable, Sequence
 from .chunker import Chunk
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class SchemaVersionError(RuntimeError):
@@ -52,6 +52,13 @@ class Indexer:
                     text TEXT NOT NULL,
                     start_line INTEGER NOT NULL,
                     end_line INTEGER NOT NULL,
+                    src TEXT,
+                    ts TEXT,
+                    ts_end TEXT,
+                    page INTEGER,
+                    chapter TEXT,
+                    slide INTEGER,
+                    sheet TEXT,
                     metadata_json TEXT NOT NULL DEFAULT '{}'
                 )
                 """
@@ -89,15 +96,23 @@ class Indexer:
                 con.execute(
                     """
                     INSERT INTO chunks(
-                        id, source, heading_path, text, start_line, end_line, metadata_json
+                        id, source, heading_path, text, start_line, end_line,
+                        src, ts, ts_end, page, chapter, slide, sheet, metadata_json
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         source = excluded.source,
                         heading_path = excluded.heading_path,
                         text = excluded.text,
                         start_line = excluded.start_line,
                         end_line = excluded.end_line,
+                        src = excluded.src,
+                        ts = excluded.ts,
+                        ts_end = excluded.ts_end,
+                        page = excluded.page,
+                        chapter = excluded.chapter,
+                        slide = excluded.slide,
+                        sheet = excluded.sheet,
                         metadata_json = excluded.metadata_json
                     """,
                     (
@@ -107,6 +122,13 @@ class Indexer:
                         chunk.text,
                         chunk.start_line,
                         chunk.end_line,
+                        chunk.src,
+                        chunk.ts,
+                        chunk.ts_end,
+                        chunk.page,
+                        chunk.chapter,
+                        chunk.slide,
+                        chunk.sheet,
                         "{}",
                     ),
                 )
@@ -177,7 +199,8 @@ def _check_schema_version(con: sqlite3.Connection) -> None:
     if found != SCHEMA_VERSION:
         raise SchemaVersionError(
             f"Index schema version {found} is not supported by this code "
-            f"(expected {SCHEMA_VERSION}). Rebuild the index with `context-rag index`."
+            f"(expected {SCHEMA_VERSION}). please rebuild index: "
+            "rm .context-rag/index.db && context-rag index ."
         )
 
 
