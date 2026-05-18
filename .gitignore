@@ -1,0 +1,36 @@
+# Vault-only bee state (lives in the parent vault, not in this repo)
+.bee-config.yaml
+ai-agents.yaml
+memory/
+TODO.md
+
+# Local DB / index / embeddings (per-user data)
+*.db
+*.sqlite*
+embeddings/
+.context-rag/
+
+# Standard build/test artefacts
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+*.egg-info/
+
+# Secrets and local editor state
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+!.vscode/settings.json.example

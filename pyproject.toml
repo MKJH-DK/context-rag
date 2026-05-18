@@ -1,0 +1,18 @@
+[project]
+name = "context-rag"
+version = "0.1.0"
+description = "standalone hybrid RAG (BM25+dense+RRF) over markdown corpora"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "ruff",
+]
+
+[tool.ruff]
+line-length = 88
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

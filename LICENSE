@@ -1,0 +1,13 @@
+_(Replace this file with an appropriate license when publishing.
+ Most bees in mkjh-vault use MIT; some stay private — check with
+ Queen's LICENSE philosophy before deciding.)_
+
+For private bees, the Queen's license applies (see vault-root LICENSE).
+For public bees, choose one of:
+
+- MIT (simple, permissive) — https://choosealicense.com/licenses/mit/
+- Apache-2.0 (permissive + patent grant) — https://choosealicense.com/licenses/apache-2.0/
+- AGPL-3.0 (copyleft for networked services) — https://choosealicense.com/licenses/agpl-3.0/
+
+When decided, replace this file's contents with the chosen license text,
+with the correct year and name (Mike Holmsted / mkjh.dk).
