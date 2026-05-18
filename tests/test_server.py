@@ -14,9 +14,11 @@ def test_server_helpers_return_citations(tmp_path: Path) -> None:
         text="tool visible citations",
         start_line=4,
         end_line=6,
+        src="video.mp4",
+        ts="01:20",
     )
     indexer = Indexer(db_path)
     indexer.add_chunks([chunk], [[1.0, 0.0, 0.0]])
 
     assert list_sources(db_path)[0]["source"] == "notes.md"
-    assert get_chunk(db_path, "chunk:one")["citation"] == "notes.md:4-6"
+    assert get_chunk(db_path, "chunk:one")["citation"] == "[video.mp4 @ 01:20] (chunk chunk:one)"

@@ -36,6 +36,7 @@ def bm25_search(db: str | Path, query: str, k: int = 20) -> list[dict[str, Any]]
         rows = con.execute(
             """
             SELECT c.id, c.source, c.heading_path, c.text, c.start_line, c.end_line,
+                   c.src, c.ts, c.ts_end, c.page, c.chapter, c.slide, c.sheet,
                    bm25(chunks_fts) AS bm25_score
             FROM chunks_fts
             JOIN chunks c ON c.id = chunks_fts.id
@@ -61,6 +62,7 @@ def dense_search(
         rows = con.execute(
             """
             SELECT c.id, c.source, c.heading_path, c.text, c.start_line, c.end_line,
+                   c.src, c.ts, c.ts_end, c.page, c.chapter, c.slide, c.sheet,
                    v.embedding, v.dim
             FROM chunk_vectors v
             JOIN chunks c ON c.id = v.chunk_id
@@ -116,6 +118,23 @@ def rrf_fuse(
     return fused[:k]
 
 
+def format_citation(hit: dict[str, Any]) -> str:
+    """Return a user-facing citation for a search hit."""
+    chunk_id = hit["chunk_id"]
+    src = hit.get("src") or hit["source"]
+    if hit.get("ts"):
+        location = f"{src} @ {hit['ts']}"
+    elif hit.get("page") is not None:
+        location = f"{src} p.{hit['page']}"
+    elif hit.get("slide") is not None:
+        location = f"{src} slide {hit['slide']}"
+    elif hit.get("sheet"):
+        location = f"{src} sheet {hit['sheet']}"
+    else:
+        location = f"{hit['source']}:{hit['start_line']}-{hit['end_line']}"
+    return f"[{location}] (chunk {chunk_id})"
+
+
 def _result(
     row: sqlite3.Row,
     score: float,
@@ -123,7 +142,7 @@ def _result(
     rank_bm25: int | None = None,
     rank_dense: int | None = None,
 ) -> dict[str, Any]:
-    return {
+    result: dict[str, Any] = {
         "chunk_id": row["id"],
         "source": row["source"],
         "heading_path": json.loads(row["heading_path"]),
@@ -134,6 +153,13 @@ def _result(
         "rank_bm25": rank_bm25,
         "rank_dense": rank_dense,
     }
+    for key in ("src", "ts", "ts_end", "chapter", "sheet"):
+        if row[key] is not None:
+            result[key] = row[key]
+    for key in ("page", "slide"):
+        if row[key] is not None:
+            result[key] = int(row[key])
+    return result
 
 
 def _connect(db: str | Path) -> sqlite3.Connection:

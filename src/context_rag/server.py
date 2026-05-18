@@ -9,7 +9,7 @@ import sqlite3
 from typing import Any
 
 from .embeddings import Embedder
-from .query import hybrid_search
+from .query import format_citation, hybrid_search
 
 
 DEFAULT_DB = Path(".context-rag/index.db")
@@ -28,7 +28,8 @@ def get_chunk(db_path: str | Path, chunk_id: str) -> dict[str, Any] | None:
     with _connect(db_path) as con:
         row = con.execute(
             """
-            SELECT id, source, heading_path, text, start_line, end_line
+            SELECT id, source, heading_path, text, start_line, end_line,
+                   src, ts, ts_end, page, chapter, slide, sheet
             FROM chunks
             WHERE id = ?
             """,
@@ -107,7 +108,7 @@ def _connect(db_path: str | Path) -> sqlite3.Connection:
 
 
 def _row_result(row: sqlite3.Row) -> dict[str, Any]:
-    return {
+    result: dict[str, Any] = {
         "chunk_id": row["id"],
         "source": row["source"],
         "heading_path": json.loads(row["heading_path"]),
@@ -118,11 +119,17 @@ def _row_result(row: sqlite3.Row) -> dict[str, Any]:
         "rank_bm25": None,
         "rank_dense": None,
     }
+    for key in ("src", "ts", "ts_end", "chapter", "sheet"):
+        if row[key] is not None:
+            result[key] = row[key]
+    for key in ("page", "slide"):
+        if row[key] is not None:
+            result[key] = int(row[key])
+    return result
 
 
 def _with_citation(hit: dict[str, Any]) -> dict[str, Any]:
-    citation = f"{hit['source']}:{hit['start_line']}-{hit['end_line']}"
-    return {**hit, "citation": citation}
+    return {**hit, "citation": format_citation(hit)}
 
 
 if __name__ == "__main__":

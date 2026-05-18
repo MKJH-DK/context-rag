@@ -10,7 +10,7 @@ from typing import Any
 from .chunker import chunk_markdown
 from .embeddings import Embedder
 from .indexer import Indexer
-from .query import bm25_search, dense_search, hybrid_search
+from .query import bm25_search, dense_search, format_citation, hybrid_search
 from .server import serve
 
 
@@ -127,8 +127,8 @@ def cmd_query(query: str, *, k: int, mode: str | None) -> int:
 
     for idx, hit in enumerate(hits, 1):
         heading = " > ".join(hit["heading_path"]) or "(root)"
-        citation = f"{hit['source']}:{hit['start_line']}-{hit['end_line']}"
-        print(f"{idx}. {heading} [{citation}] score={hit['score']:.4f}")
+        citation = format_citation(hit)
+        print(f"{idx}. {heading} {citation} score={hit['score']:.4f}")
         print(_preview(hit["text"]))
     return 0
 
