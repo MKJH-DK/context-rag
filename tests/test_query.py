@@ -62,12 +62,31 @@ def test_format_citation_prefers_location_metadata() -> None:
         == "[Module/video.mp4 @ 02:15] (chunk chunk:one)"
     )
     assert (
+        format_citation(
+            {
+                **base,
+                "src": "video.mp4",
+                "ts": "01:07",
+                "ts_end": "01:40",
+            }
+        )
+        == "[video.mp4 @ 01:07-01:40] (chunk chunk:one)"
+    )
+    assert (
         format_citation({**base, "src": "Module/book.pdf", "page": 3})
         == "[Module/book.pdf p.3] (chunk chunk:one)"
     )
     assert (
+        format_citation({**base, "src": "bog.pdf", "page": 3, "page_end": 5})
+        == "[bog.pdf p.3-5] (chunk chunk:one)"
+    )
+    assert (
         format_citation({**base, "src": "Module/slides.pptx", "slide": 4})
         == "[Module/slides.pptx slide 4] (chunk chunk:one)"
+    )
+    assert (
+        format_citation({**base, "src": "deck.pptx", "slide": 4, "slide_end": 7})
+        == "[deck.pptx slide 4-7] (chunk chunk:one)"
     )
     assert (
         format_citation({**base, "src": "Module/data.xlsx", "sheet": "Budget"})

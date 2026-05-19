@@ -26,8 +26,10 @@ class Chunk:
     ts: str | None = None
     ts_end: str | None = None
     page: int | None = None
+    page_end: int | None = None
     chapter: str | None = None
     slide: int | None = None
+    slide_end: int | None = None
     sheet: str | None = None
 
     def as_dict(self) -> dict[str, object]:
@@ -142,7 +144,7 @@ def _split_section(
                     text="\n".join(entry[0] for entry in buffer).strip(),
                     start_line=buffer_start,
                     end_line=buffer[-1][1],
-                    loc=_first_loc(buffer),
+                    loc=_chunk_loc(buffer),
                 )
             )
             buffer, buffer_start = _overlap_lines(buffer, overlap, start_line + offset)
@@ -158,7 +160,7 @@ def _split_section(
                 text="\n".join(entry[0] for entry in buffer).strip(),
                 start_line=buffer_start,
                 end_line=buffer[-1][1],
-                loc=_first_loc(buffer),
+                loc=_chunk_loc(buffer),
             )
         )
     return chunks
@@ -184,12 +186,37 @@ def _heading_path(headings: dict[int, str]) -> tuple[str, ...]:
     return tuple(headings[level] for level in sorted(headings) if level <= 3)
 
 
-def _first_loc(lines: list[tuple[str, int, dict[str, str]]]) -> dict[str, str]:
-    """Use the first marker that applies to this chunk's content."""
+def _chunk_loc(lines: list[tuple[str, int, dict[str, str]]]) -> dict[str, str]:
+    """Use first marker metadata and derive ranges within the first source segment."""
+    first: dict[str, str] | None = None
+    first_src: str | None = None
+    last_values: dict[str, str] = {}
+
     for _, _, loc in lines:
-        if loc:
-            return loc
-    return {}
+        if not loc:
+            continue
+        if first is None:
+            first = {key: value for key, value in loc.items() if key != "ts_end"}
+            first_src = loc.get("src")
+        elif loc.get("src") != first_src:
+            break
+        for key in ("ts", "p", "slide"):
+            if loc.get(key):
+                last_values[key] = loc[key]
+
+    if first is None:
+        return {}
+
+    for key, end_key in (
+        ("ts", "ts_end"),
+        ("p", "page_end"),
+        ("slide", "slide_end"),
+    ):
+        start = first.get(key)
+        end = last_values.get(key)
+        if start and end and _range_value_differs(key, start, end):
+            first[end_key] = end
+    return first
 
 
 def _chunk(
@@ -215,8 +242,10 @@ def _chunk(
         ts=loc.get("ts"),
         ts_end=loc.get("ts_end"),
         page=_to_int(loc.get("p")),
+        page_end=_to_int(loc.get("page_end")),
         chapter=loc.get("ch"),
         slide=_to_int(loc.get("slide")),
+        slide_end=_to_int(loc.get("slide_end")),
         sheet=loc.get("sheet"),
     )
 
@@ -241,3 +270,9 @@ def _to_int(value: str | None) -> int | None:
         return int(value)
     except ValueError:
         return None
+
+
+def _range_value_differs(key: str, start: str, end: str) -> bool:
+    if key in {"p", "slide"}:
+        return _to_int(start) is not None and _to_int(start) != _to_int(end)
+    return start != end

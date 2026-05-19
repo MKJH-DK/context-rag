@@ -92,9 +92,55 @@ def test_loc_markers_are_removed_and_stamped_on_chunks(tmp_path: Path) -> None:
 
     assert chunks[1].src == "Module/video.mp4"
     assert chunks[1].ts == "00:12"
-    assert chunks[1].ts_end == "00:20"
+    assert chunks[1].ts_end is None
     assert "<!-- loc:" not in chunks[1].text
     assert chunks[1].text.startswith("## Video")
     assert chunks[2].src == "Module/book.pdf"
     assert chunks[2].page == 4
     assert chunks[2].text.endswith("Page text")
+
+
+def test_ts_range_uses_last_marker_with_same_src(tmp_path: Path) -> None:
+    path = tmp_path / "range.md"
+    path.write_text(
+        "\n".join(
+            [
+                "# Course",
+                "## Video",
+                "<!-- loc: src=video.mp4; ts=00:00 -->",
+                "Opening",
+                "<!-- loc: src=video.mp4; ts=00:15 -->",
+                "Middle",
+                "<!-- loc: src=video.mp4; ts=00:30 -->",
+                "Closing",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    chunks = chunk_markdown(path)
+
+    assert chunks[1].ts == "00:00"
+    assert chunks[1].ts_end == "00:30"
+
+
+def test_ts_range_omits_end_when_markers_share_ts(tmp_path: Path) -> None:
+    path = tmp_path / "same-ts.md"
+    path.write_text(
+        "\n".join(
+            [
+                "# Course",
+                "## Video",
+                "<!-- loc: src=video.mp4; ts=00:00 -->",
+                "Opening",
+                "<!-- loc: src=video.mp4; ts=00:00 -->",
+                "Still same timestamp",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    chunks = chunk_markdown(path)
+
+    assert chunks[1].ts == "00:00"
+    assert chunks[1].ts_end is None

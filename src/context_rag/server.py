@@ -46,7 +46,8 @@ def get_chunk(db_path: str | Path, chunk_id: str) -> dict[str, Any] | None:
         row = con.execute(
             """
             SELECT id, source, heading_path, text, start_line, end_line,
-                   src, ts, ts_end, page, chapter, slide, sheet
+                   src, ts, ts_end, page, page_end, chapter,
+                   slide, slide_end, sheet
             FROM chunks
             WHERE id = ?
             """,
@@ -156,7 +157,7 @@ def _row_result(row: sqlite3.Row) -> dict[str, Any]:
     for key in ("src", "ts", "ts_end", "chapter", "sheet"):
         if row[key] is not None:
             result[key] = row[key]
-    for key in ("page", "slide"):
+    for key in ("page", "page_end", "slide", "slide_end"):
         if row[key] is not None:
             result[key] = int(row[key])
     return result

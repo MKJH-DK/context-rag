@@ -13,7 +13,7 @@ from typing import Any, Iterable, Sequence
 from .chunker import Chunk
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 REBUILD_HINT = "Rebuild: rm .context-rag/index.db && context-rag index ."
 
 
@@ -61,8 +61,10 @@ class Indexer:
                     ts TEXT,
                     ts_end TEXT,
                     page INTEGER,
+                    page_end INTEGER,
                     chapter TEXT,
                     slide INTEGER,
+                    slide_end INTEGER,
                     sheet TEXT,
                     metadata_json TEXT NOT NULL DEFAULT '{}'
                 )
@@ -110,9 +112,9 @@ class Indexer:
                     """
                     INSERT INTO chunks(
                         id, source, heading_path, text, start_line, end_line,
-                        src, ts, ts_end, page, chapter, slide, sheet, metadata_json
+                        src, ts, ts_end, page, page_end, chapter, slide, slide_end, sheet, metadata_json
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         source = excluded.source,
                         heading_path = excluded.heading_path,
@@ -123,8 +125,10 @@ class Indexer:
                         ts = excluded.ts,
                         ts_end = excluded.ts_end,
                         page = excluded.page,
+                        page_end = excluded.page_end,
                         chapter = excluded.chapter,
                         slide = excluded.slide,
+                        slide_end = excluded.slide_end,
                         sheet = excluded.sheet,
                         metadata_json = excluded.metadata_json
                     """,
@@ -139,8 +143,10 @@ class Indexer:
                         chunk.ts,
                         chunk.ts_end,
                         chunk.page,
+                        chunk.page_end,
                         chunk.chapter,
                         chunk.slide,
+                        chunk.slide_end,
                         chunk.sheet,
                         "{}",
                     ),

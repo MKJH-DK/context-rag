@@ -43,8 +43,10 @@ def test_indexer_roundtrips_loc_metadata_columns(tmp_path: Path) -> None:
         ts="02:15",
         ts_end="02:30",
         page=3,
+        page_end=5,
         chapter="Intro",
         slide=4,
+        slide_end=7,
         sheet="Data",
     )
 
@@ -52,18 +54,18 @@ def test_indexer_roundtrips_loc_metadata_columns(tmp_path: Path) -> None:
 
     with sqlite3.connect(db_path) as con:
         row = con.execute(
-            "SELECT src, ts, ts_end, page, chapter, slide, sheet FROM chunks WHERE id = ?",
+            "SELECT src, ts, ts_end, page, page_end, chapter, slide, slide_end, sheet FROM chunks WHERE id = ?",
             ("chunk:meta",),
         ).fetchone()
 
-    assert row == ("Module/video.mp4", "02:15", "02:30", 3, "Intro", 4, "Data")
+    assert row == ("Module/video.mp4", "02:15", "02:30", 3, 5, "Intro", 4, 7, "Data")
 
 
 def test_old_schema_requires_rebuild(tmp_path: Path) -> None:
     db_path = tmp_path / "index.db"
     with sqlite3.connect(db_path) as con:
         con.execute("CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-        con.execute("INSERT INTO meta(key, value) VALUES ('schema_version', '1')")
+        con.execute("INSERT INTO meta(key, value) VALUES ('schema_version', '2')")
 
     try:
         Indexer(db_path)

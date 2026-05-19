@@ -36,7 +36,8 @@ def bm25_search(db: str | Path, query: str, k: int = 20) -> list[dict[str, Any]]
         rows = con.execute(
             """
             SELECT c.id, c.source, c.heading_path, c.text, c.start_line, c.end_line,
-                   c.src, c.ts, c.ts_end, c.page, c.chapter, c.slide, c.sheet,
+                   c.src, c.ts, c.ts_end, c.page, c.page_end, c.chapter,
+                   c.slide, c.slide_end, c.sheet,
                    bm25(chunks_fts) AS bm25_score
             FROM chunks_fts
             JOIN chunks c ON c.id = chunks_fts.id
@@ -69,7 +70,8 @@ def dense_search(
         rows = con.execute(
             """
             SELECT c.id, c.source, c.heading_path, c.text, c.start_line, c.end_line,
-                   c.src, c.ts, c.ts_end, c.page, c.chapter, c.slide, c.sheet,
+                   c.src, c.ts, c.ts_end, c.page, c.page_end, c.chapter,
+                   c.slide, c.slide_end, c.sheet,
                    v.embedding, v.dim
             FROM chunk_vectors v
             JOIN chunks c ON c.id = v.chunk_id
@@ -130,16 +132,22 @@ def format_citation(hit: dict[str, Any]) -> str:
     chunk_id = hit["chunk_id"]
     src = hit.get("src") or hit["source"]
     if hit.get("ts"):
-        location = f"{src} @ {hit['ts']}"
+        location = f"{src} @ {_format_range(hit['ts'], hit.get('ts_end'))}"
     elif hit.get("page") is not None:
-        location = f"{src} p.{hit['page']}"
+        location = f"{src} p.{_format_range(hit['page'], hit.get('page_end'))}"
     elif hit.get("slide") is not None:
-        location = f"{src} slide {hit['slide']}"
+        location = f"{src} slide {_format_range(hit['slide'], hit.get('slide_end'))}"
     elif hit.get("sheet"):
         location = f"{src} sheet {hit['sheet']}"
     else:
         location = f"{hit['source']}:{hit['start_line']}-{hit['end_line']}"
     return f"[{location}] (chunk {chunk_id})"
+
+
+def _format_range(start: Any, end: Any | None) -> str:
+    if end is None or str(end) == str(start):
+        return str(start)
+    return f"{start}-{end}"
 
 
 def _result(
@@ -163,7 +171,7 @@ def _result(
     for key in ("src", "ts", "ts_end", "chapter", "sheet"):
         if row[key] is not None:
             result[key] = row[key]
-    for key in ("page", "slide"):
+    for key in ("page", "page_end", "slide", "slide_end"):
         if row[key] is not None:
             result[key] = int(row[key])
     return result
