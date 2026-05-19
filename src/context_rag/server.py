@@ -23,11 +23,20 @@ DEFAULT_TOOL_DESCRIPTIONS = {
 }
 
 
-def search_index(db_path: str | Path, query: str, k: int = 10) -> list[dict[str, Any]]:
+def search_index(
+    db_path: str | Path,
+    query: str,
+    k: int = 10,
+    *,
+    embedder: Embedder | None = None,
+) -> list[dict[str, Any]]:
     """Search the markdown corpus and return cited chunks."""
 
-    embedder = Embedder()
-    return [_with_citation(hit) for hit in hybrid_search(db_path, embedder, query, k=k)]
+    active_embedder = embedder or Embedder()
+    return [
+        _with_citation(hit)
+        for hit in hybrid_search(db_path, active_embedder, query, k=k)
+    ]
 
 
 def get_chunk(db_path: str | Path, chunk_id: str) -> dict[str, Any] | None:
@@ -79,13 +88,14 @@ def serve(db_path: str | Path = DEFAULT_DB) -> None:
     get_chunk_fn = get_chunk
     list_sources_fn = list_sources
     descriptions = resolve_tool_descriptions()
+    embedder = Embedder()
     mcp = FastMCP("context-rag")
 
     @mcp.tool(name="search", description=descriptions["search"])
     def _search_tool(query: str, k: int = 10) -> list[dict[str, Any]]:
         """Search an indexed markdown corpus and return chunks with citations."""
 
-        return search_index(db, query, k=k)
+        return search_index(db, query, k=k, embedder=embedder)
 
     @mcp.tool(name="get_chunk", description=descriptions["get_chunk"])
     def _get_chunk_tool(chunk_id: str) -> dict[str, Any] | None:
