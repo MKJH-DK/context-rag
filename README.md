@@ -19,7 +19,24 @@ citations.
 - **Default retrieval**: hybrid BM25 + dense with RRF fusion
 - **Default embedding model**: `BAAI/bge-m3`
 
-## Install
+## Installation
+
+Fresh machine setup is one command from the repository root:
+
+```bash
+python scripts/install.py
+```
+
+No system binaries required.
+
+For development dependencies:
+
+```bash
+python scripts/install.py --dev
+pytest -x
+```
+
+Manual fallback:
 
 ```bash
 git clone git@github.com:MKJH-DK/context-rag.git
