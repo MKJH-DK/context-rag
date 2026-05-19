@@ -14,22 +14,29 @@ FALLBACK_MODEL = "local-hashing-1024"
 TOKEN_RE = re.compile(r"[\w-]+", re.UNICODE)
 
 
+def configured_embedding_model() -> str:
+    from .cli import load_config
+
+    return str(load_config().get("embedding_model", DEFAULT_MODEL))
+
+
 class Embedder:
     """Encode text with bge-m3 when available, otherwise a local test fallback."""
 
     def __init__(
         self,
-        model_name: str = DEFAULT_MODEL,
+        model_name: str | None = None,
         *,
         batch_size: int = 16,
         device: str | None = None,
         allow_hash_fallback: bool = True,
     ) -> None:
-        self.requested_model_name = model_name
+        resolved_model = model_name or configured_embedding_model()
+        self.requested_model_name = resolved_model
         self.batch_size = batch_size
         self.device = device or detect_device()
         self._model: Any | None = None
-        self.model_name = model_name
+        self.model_name = resolved_model
 
         try:
             from sentence_transformers import SentenceTransformer
@@ -46,7 +53,7 @@ class Embedder:
         cache_folder = _cache_folder()
         if cache_folder:
             kwargs["cache_folder"] = cache_folder
-        self._model = SentenceTransformer(model_name, **kwargs)
+        self._model = SentenceTransformer(resolved_model, **kwargs)
 
     @property
     def dimension(self) -> int:

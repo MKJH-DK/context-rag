@@ -10,8 +10,8 @@ import sys
 from typing import Any
 
 from .chunker import chunk_markdown
-from .embeddings import Embedder
-from .indexer import Indexer
+from .embeddings import DEFAULT_MODEL, Embedder
+from .indexer import Indexer, check_embedding_model
 from .query import bm25_search, dense_search, format_citation, hybrid_search
 from .server import serve
 
@@ -22,11 +22,15 @@ CONFIG_TEMPLATE = """# context-rag configuration
 # Available MCP tools: search, get_chunk, list_sources.
 corpus_root: .
 database_path: .context-rag/index.db
+# embedding_model: BAAI/bge-m3  # default, multilingual, ~2GB
+# Alternatives:
+#   intfloat/multilingual-e5-base  # ~1.1GB, good Danish quality
+#   intfloat/multilingual-e5-small # ~470MB, decent Danish quality
+#   paraphrase-multilingual-MiniLM-L12-v2 # ~470MB, OK Danish
 chunk:
   max_chars: 4000
   overlap: 0
 embedding:
-  model: BAAI/bge-m3
   batch_size: 16
 retrieval:
   default_mode: hybrid
@@ -46,6 +50,7 @@ def main(argv: list[str] | None = None) -> int:
 
     index_parser = sub.add_parser("index", help="index markdown files")
     index_parser.add_argument("directory", type=Path)
+    index_parser.add_argument("--model", default=None, help="override embedding model")
 
     query_parser = sub.add_parser("query", help="query the index")
     query_parser.add_argument("query")
@@ -53,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     query_parser.add_argument(
         "--mode", choices=["hybrid", "bm25", "dense"], default=None
     )
+    query_parser.add_argument("--model", default=None, help="override embedding model")
 
     serve_parser = sub.add_parser("serve", help="start the stdio MCP server")
     serve_parser.add_argument("--db", type=Path, default=None)
@@ -70,9 +76,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "init":
         return cmd_init()
     if args.command == "index":
-        return cmd_index(args.directory)
+        return cmd_index(args.directory, model=args.model)
     if args.command == "query":
-        return cmd_query(args.query, k=args.k, mode=args.mode)
+        return cmd_query(args.query, k=args.k, mode=args.mode, model=args.model)
     if args.command == "serve":
         config = load_config()
         serve(args.db or Path(config["database_path"]))
@@ -97,12 +103,13 @@ def cmd_init() -> int:
     return 0
 
 
-def cmd_index(directory: Path) -> int:
+def cmd_index(directory: Path, *, model: str | None = None) -> int:
     config = load_config()
     root = directory.expanduser().resolve()
     db_path = Path(config["database_path"])
     chunk_config = config["chunk"]
     embed_config = config["embedding"]
+    model_name = model or str(config["embedding_model"])
 
     files = _markdown_files(root)
     chunks = []
@@ -116,12 +123,14 @@ def cmd_index(directory: Path) -> int:
         )
 
     embedder = Embedder(
-        model_name=str(embed_config["model"]),
+        model_name=model_name,
         batch_size=int(embed_config["batch_size"]),
     )
+    if db_path.exists():
+        check_embedding_model(db_path, embedder.model_name)
     vectors = embedder.encode([chunk.text for chunk in chunks]) if chunks else []
     indexer = Indexer(db_path)
-    indexer.add_chunks(chunks, vectors)
+    indexer.add_chunks(chunks, vectors, embedding_model=embedder.model_name)
     stats = indexer.get_stats()
     print(
         f"indexed {len(files)} files, {stats['total_chunks']} chunks, "
@@ -130,11 +139,14 @@ def cmd_index(directory: Path) -> int:
     return 0
 
 
-def cmd_query(query: str, *, k: int, mode: str | None) -> int:
+def cmd_query(
+    query: str, *, k: int, mode: str | None, model: str | None = None
+) -> int:
     config = load_config()
     selected_mode = mode or str(config["retrieval"]["default_mode"])
     db_path = Path(config["database_path"])
-    embedder = Embedder(model_name=str(config["embedding"]["model"]))
+    model_name = model or str(config["embedding_model"])
+    embedder = Embedder(model_name=model_name)
 
     if selected_mode == "bm25":
         hits = bm25_search(db_path, query, k=k)
@@ -217,7 +229,12 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
         return _defaults()
     data = _parse_simple_yaml(config_path)
     defaults = _defaults()
-    return _merge(defaults, data)
+    merged = _merge(defaults, data)
+    if "embedding_model" not in data:
+        embedding = data.get("embedding", {})
+        if isinstance(embedding, dict) and embedding.get("model"):
+            merged["embedding_model"] = embedding["model"]
+    return merged
 
 
 def _load_claude_desktop_config(path: Path) -> dict[str, Any]:
@@ -246,8 +263,9 @@ def _defaults() -> dict[str, Any]:
     return {
         "corpus_root": ".",
         "database_path": ".context-rag/index.db",
+        "embedding_model": DEFAULT_MODEL,
         "chunk": {"max_chars": 4000, "overlap": 0},
-        "embedding": {"model": "BAAI/bge-m3", "batch_size": 16},
+        "embedding": {"batch_size": 16},
         "retrieval": {"default_mode": "hybrid", "rrf_k": 60},
         "tool_descriptions": {
             "search": (
@@ -306,9 +324,24 @@ def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
 
 
 def _scalar(value: str) -> Any:
+    value = _strip_inline_comment(value).strip()
     if value.isdigit():
         return int(value)
     return value.strip("'\"")
+
+
+def _strip_inline_comment(value: str) -> str:
+    quote: str | None = None
+    for idx, char in enumerate(value):
+        if char in "'\"" and (idx == 0 or value[idx - 1] != "\\"):
+            quote = None if quote == char else char
+        elif (
+            char == "#"
+            and quote is None
+            and (idx == 0 or value[idx - 1].isspace())
+        ):
+            return value[:idx].rstrip()
+    return value
 
 
 if __name__ == "__main__":

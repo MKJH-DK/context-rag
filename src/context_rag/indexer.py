@@ -14,10 +14,15 @@ from .chunker import Chunk
 
 
 SCHEMA_VERSION = 2
+REBUILD_HINT = "Rebuild: rm .context-rag/index.db && context-rag index ."
 
 
 class SchemaVersionError(RuntimeError):
     """Raised when an existing database uses a different schema version."""
+
+
+class EmbeddingModelMismatchError(RuntimeError):
+    """Raised when index metadata does not match the requested model."""
 
 
 @dataclass(frozen=True)
@@ -83,7 +88,13 @@ class Indexer:
             )
             con.commit()
 
-    def add_chunks(self, chunks: Iterable[Chunk], embeddings: Any | None = None) -> None:
+    def add_chunks(
+        self,
+        chunks: Iterable[Chunk],
+        embeddings: Any | None = None,
+        *,
+        embedding_model: str | None = None,
+    ) -> None:
         chunk_list = list(chunks)
         vectors = _rows(embeddings) if embeddings is not None else [None] * len(chunk_list)
         if len(vectors) != len(chunk_list):
@@ -91,6 +102,8 @@ class Indexer:
 
         with _connect(self.db_path) as con:
             _check_schema_version(con)
+            if embedding_model is not None:
+                _set_meta(con, "embedding_model", embedding_model)
             for chunk, vector in zip(chunk_list, vectors):
                 heading_json = json.dumps(list(chunk.heading_path), ensure_ascii=False)
                 con.execute(
@@ -179,6 +192,30 @@ def cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
     return dot / (left_norm * right_norm)
 
 
+def get_embedding_model(db_path: str | Path) -> str | None:
+    path = Path(db_path)
+    if not path.exists():
+        return None
+    with sqlite3.connect(str(path)) as con:
+        try:
+            row = con.execute(
+                "SELECT value FROM meta WHERE key = 'embedding_model'"
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return None
+    return str(row[0]) if row else None
+
+
+def check_embedding_model(db_path: str | Path, requested_model: str) -> None:
+    built_model = get_embedding_model(db_path)
+    if built_model != requested_model:
+        built = built_model or "unknown"
+        raise EmbeddingModelMismatchError(
+            f"Index built with model {built} but config requests {requested_model}. "
+            f"{REBUILD_HINT}"
+        )
+
+
 def _connect(path: Path) -> sqlite3.Connection:
     con = sqlite3.connect(str(path))
     con.row_factory = sqlite3.Row
@@ -241,13 +278,29 @@ def _upsert_vector(con: sqlite3.Connection, chunk_id: str, vector: Sequence[floa
     )
     if _meta(con, "vector_backend", "blob") == "sqlite-vec":
         con.execute("DELETE FROM chunk_vec WHERE id = ?", (chunk_id,))
-        con.execute("INSERT INTO chunk_vec(id, embedding) VALUES (?, ?)", (chunk_id, payload))
+        if len(values) == 1024:
+            con.execute(
+                "INSERT INTO chunk_vec(id, embedding) VALUES (?, ?)",
+                (chunk_id, payload),
+            )
+        else:
+            _set_meta(con, "vector_backend", "blob")
 
 
 def _rows(vectors: Any) -> list[Any]:
     if hasattr(vectors, "tolist"):
         return vectors.tolist()
     return list(vectors)
+
+
+def _set_meta(con: sqlite3.Connection, key: str, value: str) -> None:
+    con.execute(
+        """
+        INSERT INTO meta(key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (key, value),
+    )
 
 
 def _meta(con: sqlite3.Connection, key: str, default: str) -> str:

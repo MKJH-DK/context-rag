@@ -8,7 +8,7 @@ import re
 import sqlite3
 from typing import Any
 
-from .indexer import cosine_similarity, unpack_vector
+from .indexer import check_embedding_model, cosine_similarity, unpack_vector
 
 
 STOPWORDS = {
@@ -57,6 +57,9 @@ def dense_search(
 ) -> list[dict[str, Any]]:
     if not query.strip() or k <= 0:
         return []
+    model_name = getattr(embedder, "model_name", None)
+    if model_name:
+        check_embedding_model(db, str(model_name))
     query_vector = _first_vector(embedder.encode([query]))
     with _connect(db) as con:
         rows = con.execute(

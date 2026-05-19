@@ -2,7 +2,12 @@ from pathlib import Path
 import sqlite3
 
 from context_rag.chunker import Chunk
-from context_rag.indexer import Indexer, SchemaVersionError
+from context_rag.indexer import (
+    EmbeddingModelMismatchError,
+    Indexer,
+    SchemaVersionError,
+    check_embedding_model,
+)
 
 
 def test_indexer_creates_schema_and_stats(tmp_path: Path) -> None:
@@ -66,3 +71,32 @@ def test_old_schema_requires_rebuild(tmp_path: Path) -> None:
         assert "please rebuild index" in str(exc)
     else:
         raise AssertionError("expected SchemaVersionError")
+
+
+def test_indexer_stores_embedding_model_meta(tmp_path: Path) -> None:
+    db_path = tmp_path / "index.db"
+
+    Indexer(db_path).add_chunks([], embedding_model="intfloat/multilingual-e5-small")
+
+    with sqlite3.connect(db_path) as con:
+        row = con.execute(
+            "SELECT value FROM meta WHERE key = 'embedding_model'"
+        ).fetchone()
+
+    assert row == ("intfloat/multilingual-e5-small",)
+
+
+def test_embedding_model_mismatch_raises_clear_error(tmp_path: Path) -> None:
+    db_path = tmp_path / "index.db"
+    Indexer(db_path).add_chunks([], embedding_model="BAAI/bge-m3")
+
+    try:
+        check_embedding_model(db_path, "intfloat/multilingual-e5-small")
+    except EmbeddingModelMismatchError as exc:
+        assert str(exc) == (
+            "Index built with model BAAI/bge-m3 but config requests "
+            "intfloat/multilingual-e5-small. Rebuild: rm .context-rag/index.db "
+            "&& context-rag index ."
+        )
+    else:
+        raise AssertionError("expected EmbeddingModelMismatchError")
