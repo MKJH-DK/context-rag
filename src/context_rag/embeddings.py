@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import math
 import os
+from pathlib import Path
 import re
 import sys
 from functools import lru_cache
@@ -25,6 +26,39 @@ def configured_embedding_model() -> str:
     return str(load_config().get("embedding_model", DEFAULT_MODEL))
 
 
+def ensure_model_cached(model_name: str, cache_folder: str | None = None) -> None:
+    """Raise a clear error when a model is not already cached locally."""
+
+    if is_model_cached(model_name, cache_folder=cache_folder):
+        return
+    raise RuntimeError(
+        f"Model {model_name} not cached and --no-download passed. "
+        "Remove flag or pre-download with: "
+        f"python -c \"from sentence_transformers import SentenceTransformer; "
+        f"SentenceTransformer('{model_name}')\""
+    )
+
+
+def is_model_cached(model_name: str, cache_folder: str | None = None) -> bool:
+    """Return True when sentence-transformers/Hugging Face cache has a model."""
+
+    if not model_name or model_name == FALLBACK_MODEL:
+        return True
+
+    hub_slug = f"models--{model_name.replace('/', '--')}"
+    st_slug = model_name.replace("/", "_")
+    for root in _cache_roots(cache_folder):
+        candidates = [
+            root / hub_slug,
+            root / "hub" / hub_slug,
+            root / "sentence_transformers" / st_slug,
+            root / st_slug,
+        ]
+        if any(_has_cache_payload(candidate) for candidate in candidates):
+            return True
+    return False
+
+
 class Embedder:
     """Encode text with bge-m3 when available, otherwise a local test fallback."""
 
@@ -35,8 +69,11 @@ class Embedder:
         batch_size: int = 16,
         device: str | None = None,
         allow_hash_fallback: bool = True,
+        no_download: bool = False,
     ) -> None:
         resolved_model = model_name or configured_embedding_model()
+        if no_download:
+            ensure_model_cached(resolved_model)
         self.requested_model_name = resolved_model
         self.batch_size = batch_size
         self.device = device or detect_device()
@@ -61,6 +98,8 @@ class Embedder:
         cache_folder = _cache_folder()
         if cache_folder:
             kwargs["cache_folder"] = cache_folder
+        if no_download:
+            kwargs["local_files_only"] = True
         self._model = SentenceTransformer(resolved_model, **kwargs)
         if self.device == "cuda":
             self._model.half()
@@ -155,6 +194,29 @@ def _cache_folder() -> str | None:
     if os.environ.get("HF_HOME"):
         return os.environ["HF_HOME"]
     return None
+
+
+def _cache_roots(cache_folder: str | None = None) -> list[Path]:
+    roots: list[Path] = []
+    if cache_folder:
+        roots.append(Path(cache_folder).expanduser())
+    configured = _cache_folder()
+    if configured:
+        roots.append(Path(configured).expanduser())
+    roots.append(Path.home() / ".cache" / "huggingface")
+    unique: list[Path] = []
+    for root in roots:
+        if root not in unique:
+            unique.append(root)
+    return unique
+
+
+def _has_cache_payload(path: Path) -> bool:
+    if path.is_file():
+        return True
+    if not path.is_dir():
+        return False
+    return any(path.iterdir())
 
 
 def _log_embedder_init(model_name: str, device: str, dtype: str) -> None:

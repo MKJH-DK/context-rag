@@ -10,7 +10,7 @@ import sys
 from typing import Any
 
 from .chunker import chunk_markdown
-from .embeddings import DEFAULT_MODEL, Embedder
+from .embeddings import DEFAULT_MODEL, Embedder, ensure_model_cached
 from .indexer import Indexer, check_embedding_model
 from .pseudonyms import expand_query, load_mappings
 from .query import bm25_search, dense_search, format_citation, hybrid_search
@@ -52,6 +52,11 @@ def main(argv: list[str] | None = None) -> int:
     index_parser = sub.add_parser("index", help="index markdown files")
     index_parser.add_argument("directory", type=Path)
     index_parser.add_argument("--model", default=None, help="override embedding model")
+    index_parser.add_argument(
+        "--no-download",
+        action="store_true",
+        help="fail if embedding model weights are not already cached",
+    )
 
     query_parser = sub.add_parser("query", help="query the index")
     query_parser.add_argument("query")
@@ -60,6 +65,11 @@ def main(argv: list[str] | None = None) -> int:
         "--mode", choices=["hybrid", "bm25", "dense"], default=None
     )
     query_parser.add_argument("--model", default=None, help="override embedding model")
+    query_parser.add_argument(
+        "--no-download",
+        action="store_true",
+        help="fail if embedding model weights are not already cached",
+    )
 
     serve_parser = sub.add_parser("serve", help="start the stdio MCP server")
     serve_parser.add_argument("--db", type=Path, default=None)
@@ -77,9 +87,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "init":
         return cmd_init()
     if args.command == "index":
-        return cmd_index(args.directory, model=args.model)
+        return cmd_index(
+            args.directory,
+            model=args.model,
+            no_download=args.no_download,
+        )
     if args.command == "query":
-        return cmd_query(args.query, k=args.k, mode=args.mode, model=args.model)
+        return cmd_query(
+            args.query,
+            k=args.k,
+            mode=args.mode,
+            model=args.model,
+            no_download=args.no_download,
+        )
     if args.command == "serve":
         config = load_config()
         serve(args.db or Path(config["database_path"]))
@@ -104,13 +124,20 @@ def cmd_init() -> int:
     return 0
 
 
-def cmd_index(directory: Path, *, model: str | None = None) -> int:
+def cmd_index(
+    directory: Path,
+    *,
+    model: str | None = None,
+    no_download: bool = False,
+) -> int:
     config = load_config()
     root = directory.expanduser().resolve()
     db_path = Path(config["database_path"])
     chunk_config = config["chunk"]
     embed_config = config["embedding"]
     model_name = model or str(config["embedding_model"])
+    if no_download:
+        ensure_model_cached(model_name)
 
     files = _markdown_files(root)
     chunks = []
@@ -126,6 +153,7 @@ def cmd_index(directory: Path, *, model: str | None = None) -> int:
     embedder = Embedder(
         model_name=model_name,
         batch_size=int(embed_config["batch_size"]),
+        no_download=no_download,
     )
     if db_path.exists():
         check_embedding_model(db_path, embedder.model_name)
@@ -141,13 +169,20 @@ def cmd_index(directory: Path, *, model: str | None = None) -> int:
 
 
 def cmd_query(
-    query: str, *, k: int, mode: str | None, model: str | None = None
+    query: str,
+    *,
+    k: int,
+    mode: str | None,
+    model: str | None = None,
+    no_download: bool = False,
 ) -> int:
     config = load_config()
     selected_mode = mode or str(config["retrieval"]["default_mode"])
     db_path = Path(config["database_path"])
     model_name = model or str(config["embedding_model"])
-    embedder = Embedder(model_name=model_name)
+    if no_download:
+        ensure_model_cached(model_name)
+    embedder = Embedder(model_name=model_name, no_download=no_download)
     expanded_query = expand_query(query, load_mappings())
 
     if selected_mode == "bm25":
