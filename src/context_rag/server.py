@@ -9,6 +9,7 @@ import sqlite3
 from typing import Any
 
 from .embeddings import Embedder
+from .pseudonyms import expand_query, load_mappings
 from .query import format_citation, hybrid_search
 
 
@@ -29,13 +30,15 @@ def search_index(
     k: int = 10,
     *,
     embedder: Embedder | None = None,
+    pseudonym_mappings: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Search the markdown corpus and return cited chunks."""
 
     active_embedder = embedder or Embedder()
+    expanded_query = expand_query(query, pseudonym_mappings or {})
     return [
         _with_citation(hit)
-        for hit in hybrid_search(db_path, active_embedder, query, k=k)
+        for hit in hybrid_search(db_path, active_embedder, expanded_query, k=k)
     ]
 
 
@@ -90,13 +93,20 @@ def serve(db_path: str | Path = DEFAULT_DB) -> None:
     list_sources_fn = list_sources
     descriptions = resolve_tool_descriptions()
     embedder = Embedder()
+    pseudonym_mappings = load_mappings()
     mcp = FastMCP("context-rag")
 
     @mcp.tool(name="search", description=descriptions["search"])
     def _search_tool(query: str, k: int = 10) -> list[dict[str, Any]]:
         """Search an indexed markdown corpus and return chunks with citations."""
 
-        return search_index(db, query, k=k, embedder=embedder)
+        return search_index(
+            db,
+            query,
+            k=k,
+            embedder=embedder,
+            pseudonym_mappings=pseudonym_mappings,
+        )
 
     @mcp.tool(name="get_chunk", description=descriptions["get_chunk"])
     def _get_chunk_tool(chunk_id: str) -> dict[str, Any] | None:

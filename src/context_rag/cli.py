@@ -12,6 +12,7 @@ from typing import Any
 from .chunker import chunk_markdown
 from .embeddings import DEFAULT_MODEL, Embedder
 from .indexer import Indexer, check_embedding_model
+from .pseudonyms import expand_query, load_mappings
 from .query import bm25_search, dense_search, format_citation, hybrid_search
 from .server import serve
 
@@ -147,16 +148,17 @@ def cmd_query(
     db_path = Path(config["database_path"])
     model_name = model or str(config["embedding_model"])
     embedder = Embedder(model_name=model_name)
+    expanded_query = expand_query(query, load_mappings())
 
     if selected_mode == "bm25":
-        hits = bm25_search(db_path, query, k=k)
+        hits = bm25_search(db_path, expanded_query, k=k)
     elif selected_mode == "dense":
-        hits = dense_search(db_path, embedder, query, k=k)
+        hits = dense_search(db_path, embedder, expanded_query, k=k)
     else:
         hits = hybrid_search(
             db_path,
             embedder,
-            query,
+            expanded_query,
             k=k,
             rrf_k=int(config["retrieval"]["rrf_k"]),
         )
