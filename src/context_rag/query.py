@@ -60,7 +60,11 @@ def dense_search(
     model_name = getattr(embedder, "model_name", None)
     if model_name:
         check_embedding_model(db, str(model_name))
-    query_vector = _first_vector(embedder.encode([query]))
+    cached_query = getattr(embedder, "embed_query_cached", None)
+    if callable(cached_query):
+        query_vector = _first_vector([cached_query(query)])
+    else:
+        query_vector = _first_vector(embedder.encode([query]))
     with _connect(db) as con:
         rows = con.execute(
             """

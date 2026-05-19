@@ -6,7 +6,12 @@ import hashlib
 import math
 import os
 import re
-from typing import Any, Sequence
+import sys
+from functools import lru_cache
+from typing import TYPE_CHECKING, Any, Sequence
+
+if TYPE_CHECKING:
+    import numpy as np
 
 
 DEFAULT_MODEL = "BAAI/bge-m3"
@@ -37,6 +42,7 @@ class Embedder:
         self.device = device or detect_device()
         self._model: Any | None = None
         self.model_name = resolved_model
+        self.dtype = "fp16" if self.device == "cuda" else "fp32"
 
         try:
             from sentence_transformers import SentenceTransformer
@@ -47,6 +53,8 @@ class Embedder:
                     "Install with `python -m pip install -e .`."
                 ) from exc
             self.model_name = FALLBACK_MODEL
+            self.dtype = "fp32"
+            _log_embedder_init(self.model_name, self.device, self.dtype)
             return
 
         kwargs: dict[str, Any] = {"device": self.device}
@@ -54,6 +62,9 @@ class Embedder:
         if cache_folder:
             kwargs["cache_folder"] = cache_folder
         self._model = SentenceTransformer(resolved_model, **kwargs)
+        if self.device == "cuda":
+            self._model.half()
+        _log_embedder_init(self.model_name, self.device, self.dtype)
 
     @property
     def dimension(self) -> int:
@@ -62,7 +73,7 @@ class Embedder:
         return 1024
 
     def encode(self, texts: list[str]) -> Any:
-        """Return normalized vectors for the supplied texts."""
+        """Return normalized vectors; keep batch chunk indexing uncached."""
 
         if not texts:
             return _array([])
@@ -76,17 +87,38 @@ class Embedder:
             return _array(vectors)
         return _array([_hash_embedding(text, self.dimension) for text in texts])
 
+    def embed_query_cached(self, text: str) -> "np.ndarray":
+        """Return a cached query vector as a fresh mutable array."""
+
+        cached = self._embed_query_cached_tuple(text)
+        vector = _array(cached)
+        if hasattr(vector, "copy"):
+            return vector.copy()
+        return list(cached)
+
+    @lru_cache(maxsize=256)
+    def _embed_query_cached_tuple(self, text: str) -> tuple[float, ...]:
+        vectors = self.encode([text])
+        if hasattr(vectors, "tolist"):
+            vectors = vectors.tolist()
+        return tuple(float(value) for value in vectors[0])
+
 
 def detect_device() -> str:
-    """Prefer mps, then cuda, then cpu."""
+    """Return the requested device, otherwise prefer cuda then cpu."""
+
+    configured = os.environ.get("CONTEXT_RAG_DEVICE")
+    if configured:
+        device = configured.lower()
+        if device not in {"cuda", "cpu", "mps"}:
+            raise ValueError("CONTEXT_RAG_DEVICE must be one of: cuda, cpu, mps")
+        return device
 
     try:
         import torch
     except ImportError:
         return "cpu"
 
-    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
-        return "mps"
     if torch.cuda.is_available():
         return "cuda"
     return "cpu"
@@ -123,3 +155,10 @@ def _cache_folder() -> str | None:
     if os.environ.get("HF_HOME"):
         return os.environ["HF_HOME"]
     return None
+
+
+def _log_embedder_init(model_name: str, device: str, dtype: str) -> None:
+    print(
+        f"context-rag: embedder model={model_name} device={device} dtype={dtype}",
+        file=sys.stderr,
+    )
