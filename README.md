@@ -133,6 +133,38 @@ retrieval:
   rrf_k: 60
 ```
 
+
+## Privacy and GDPR
+
+`context-rag` runs index, query, and local search against files and SQLite data
+on the local machine. It makes no outbound API calls during normal
+index/query/search execution, sends no telemetry, and includes no analytics.
+
+The only built-in network activity is the optional first-use Hugging Face model
+download performed by `sentence-transformers` when the configured embedding
+model is not already cached. Use `--no-download` on `index` or `query` to fail
+instead of fetching model weights:
+
+```bash
+context-rag index . --no-download
+context-rag query "question" --no-download
+```
+
+Pseudonym query expansion loads `pseudonyms.yaml` from the corpus working
+directory. Users can type real names in a query, and configured names are
+expanded to the same placeholders that were indexed, for example
+`Kristian Andersen` to `Underviser_01`. The original query text is not written
+to the index.
+
+When `context-rag` is used through Claude Desktop or another LLM client, that
+client is the third-party processor for any text it receives from tool results.
+That processing is outside this tool; `context-rag` only returns local retrieval
+results to the caller.
+
+The user remains the data controller. This tool is designed for privacy by
+default, but it is not legal advice and does not replace a concrete GDPR
+assessment of the source material and processing purpose.
+
 ## Limitations
 
 - The first bge-m3 run downloads local model weights through
